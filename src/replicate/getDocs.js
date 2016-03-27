@@ -1,5 +1,6 @@
 import clone from '../deps/clone';
 import Promise from '../deps/promise';
+import errors from '../deps/errors';
 
 function isGenOne(rev) {
   return /^1-/.test(rev);
@@ -31,7 +32,7 @@ function createBulkGetOpts(diffs) {
 // changes to "cancelled", then the returned promise will be rejected.
 // Else it will be resolved with a list of fetched documents.
 //
-function getDocs(src, diffs, state) {
+function getDocs(src, diffs, target, state) {
   diffs = clone(diffs); // we do not need to modify this
 
   var resultDocs = [];
@@ -39,6 +40,21 @@ function getDocs(src, diffs, state) {
   function getAllDocs() {
 
     var bulkGetOpts = createBulkGetOpts(diffs);
+    if (target.type() !== 'http') {
+      bulkGetOpts.getLocalAttachment = function (remoteDoc, filename) {
+        return target.get(remoteDoc._id)
+
+        .then(function (localDoc) {
+          var localFile = localDoc._attachments[filename]
+          var remoteFile = remoteDoc._attachments[filename]
+          if (!localFile || localFile.digest !== remoteFile.digest) {
+            throw errors.error(errors.MISSING_DOC)
+          }
+
+          return target.getAttachment(localDoc._id, filename)
+        })
+      }
+    }
 
     if (!bulkGetOpts.docs.length) { // optimization: skip empty requests
       return;

@@ -82,6 +82,8 @@ function bulkGet(db, opts, callback) {
         docOpts[param] = opts[param];
       }
     });
+    // helper method to avoid unneeded GETs for attachments
+    docOpts.getLocalAttachment = opts.getLocalAttachment
     db.get(docId, docOpts, function (err, res) {
       gotResult(i, docId, err ? [{error: err}] : formatResult(res));
     });

@@ -304,7 +304,7 @@ function HttpPouch(opts, callback) {
       }
 
       for (var i = 0; i < numBatches; i++) {
-        var subOpts = pick(opts, ['revs', 'attachments']);
+        var subOpts = pick(opts, ['revs', 'attachments', 'getLocalAttachment']);
         subOpts.docs = opts.docs.slice(i * batchSize,
           Math.min(opts.docs.length, (i + 1) * batchSize));
         bulkGetShim(self, subOpts, onResult(i));
@@ -374,6 +374,10 @@ function HttpPouch(opts, callback) {
       callback = opts;
       opts = {};
     }
+
+    var getLocalAttachment = opts.getLocalAttachment
+    delete opts.getLocalAttachment
+
     opts = clone(opts);
 
     // List of parameters to add to the GET request
@@ -410,6 +414,19 @@ function HttpPouch(opts, callback) {
       url: genDBUrl(host, id + paramsToStr(params))
     };
 
+    function fetchAttachment (path) {
+      return ajaxPromise(opts, {
+        method: 'GET',
+        url: genDBUrl(host, path),
+        binary: true
+      }).then(function (blob) {
+        if (opts.binary) {
+          return blob;
+        }
+        return blufferToBase64(blob);
+      })
+    }
+
     function fetchAttachments(doc) {
       var atts = doc._attachments;
       var filenames = atts && Object.keys(atts);
@@ -424,11 +441,15 @@ function HttpPouch(opts, callback) {
         var att = atts[filename];
         var path = encodeDocId(doc._id) + '/' + encodeAttachmentId(filename) +
           '?rev=' + doc._rev;
-        return ajaxPromise(opts, {
-          method: 'GET',
-          url: genDBUrl(host, path),
-          binary: true
-        }).then(function (blob) {
+        var promise
+
+        if (typeof getLocalAttachment === 'function') {
+          promise = getLocalAttachment(doc, filename).catch(fetchAttachment.bind(null, path))
+        } else {
+          promise = fetchAttachment(path)
+        }
+
+        return promise.then(function (blob) {
           if (opts.binary) {
             return blob;
           }
@@ -438,7 +459,7 @@ function HttpPouch(opts, callback) {
           delete att.length;
           att.data = data;
         });
-      }));
+      }))
     }
 
     function fetchAllAttachments(docOrDocs) {
